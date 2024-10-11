@@ -15,5 +15,5 @@ conda init
 conda activate taskvine
 
 # Execute the Python script or command
-vine_submit_workers -T slurm -p "--cpus-per-task=4 --time=1:00:00" -t 01:00:00 10.140.86.137 9124 10
+vine_submit_workers -T slurm -p "--cpus-per-task=4 --time=1:00:00" -t 01:00:00 10.140.116.160 9124 3
 

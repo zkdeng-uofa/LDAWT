@@ -24,16 +24,22 @@ def parse_args():
 
     return parser.parse_args()
 
-async def download_image(session, semaphore, row, output_folder, url_col, class_col):
-    """Download an image asynchronously using aiohttp with a semaphore to limit concurrency"""
+async def download_image_with_extensions(session, semaphore, row, output_folder, url_col, class_col):
+    """Download an image asynchronously with retries for different file extensions"""
+    # Extensions to try if the original extension fails
+    fallback_extensions = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.gif', '.GIF', '.pdf', '.PDF']
     async with semaphore:
         key, image_url = row.name, row[url_col]
         class_name = row[class_col].replace("'", "").replace(" ", "_")
-        file_name = f"{image_url.split('/')[-2]}.jpg"
+        
+        # Get the base URL and the original extension
+        base_url, original_ext = os.path.splitext(image_url)
+        file_name = f"{base_url.split('/')[-2]}{original_ext}"
         file_path = os.path.join(output_folder, class_name, file_name)
 
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
+        # Try downloading the image with the original extension first
         try:
             async with session.get(image_url) as response:
                 if response.status == 200:
@@ -42,9 +48,33 @@ async def download_image(session, semaphore, row, output_folder, url_col, class_
                         f.write(content)
                     return key, file_name, class_name, None
                 else:
-                    return key, None, class_name, f"HTTP error: {response.status}"
+                    print(f"Failed to download {file_name}: HTTP {response.status}")
         except Exception as err:
-            return key, None, class_name, str(err)
+            print(f"Error with original URL {image_url}: {err}")
+
+        # If original extension fails, try the fallback extensions
+        for ext in fallback_extensions:
+            if ext == original_ext:  # Skip if the fallback extension is the same as the original
+                continue
+            new_url = f"{base_url}{ext}"
+            file_name = f"{base_url.split('/')[-2]}{ext}"
+            file_path = os.path.join(output_folder, class_name, file_name)
+
+            try:
+                async with session.get(new_url) as response:
+                    if response.status == 200:
+                        content = await response.read()
+                        with open(file_path, 'wb') as f:
+                            f.write(content)
+                        return key, file_name, class_name, None
+                    else:
+                        print(f"Failed to download {file_name}: HTTP {response.status}")
+            except Exception as err:
+                print(f"Error with {new_url}: {err}")
+                continue  # Try the next extension
+
+        # If all extensions fail
+        return key, None, class_name, "All extensions failed."
 
 async def main():
     args = parse_args()
@@ -74,7 +104,7 @@ async def main():
     async with aiohttp.ClientSession() as session:
         tasks = []
         for _, row in df.iterrows():
-            task = download_image(session, semaphore, row, output_folder, url_col, class_col)
+            task = download_image_with_extensions(session, semaphore, row, output_folder, url_col, class_col)
             tasks.append(asyncio.create_task(task))
 
         errors = 0
@@ -93,8 +123,6 @@ async def main():
     full_path = Path(output_tar_path).resolve()
     print(f"Tared output folder into: {full_path}")
 
-    # Optionally delete the output folder after tarring it
-    # shutil.rmtree(output_folder)
 
 if __name__ == '__main__':
     asyncio.run(main())
