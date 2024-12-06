@@ -1,0 +1,10 @@
+{
+    "db": "/Users/zideng/Documents/DSI/github/LDAWT/LDAWT-iNaturalist/data/db/life_small.sq3db",
+    "excel": "/Users/zideng/Documents/DSI/github/LDAWT/LDAWT-iNaturalist/data/excel/test.xlsx",
+    "row_name": "Species ID",
+    "division": 10,
+    "split_folder": "10split",
+    "cloud_folder": "LDAWT_tests",
+    "port_number": 9124,
+    "parquets_directory": "example_files/2split"  
+}
