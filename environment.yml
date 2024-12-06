@@ -14,5 +14,6 @@ dependencies:
 - tree=2.1.1
 - pyarrow
 - ndcctools
+- aiohttp
 #- img2dataset=1.42.0
 
