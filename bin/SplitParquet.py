@@ -137,10 +137,15 @@ def main():
     os.makedirs(inputs.output_folder, exist_ok=True)
 
     # Output partitioned data to parquet files
+    # for group in total_df_merged["group"].unique():
+    #     subset_df = total_df_merged[total_df_merged["group"] == group]
+    #     print(f"{inputs.output_folder}/group_{group}.csv")
+    #     subset_df.to_csv(f"{inputs.output_folder}/group_{group}.csv", index=False)
+
     for group in total_df_merged["group"].unique():
         subset_df = total_df_merged[total_df_merged["group"] == group]
-        print(f"{inputs.output_folder}/group_{group}.csv")
-        subset_df.to_csv(f"{inputs.output_folder}/group_{group}.csv", index=False)
+        print(f"{inputs.output_folder}/group_{group}.parquet")
+        subset_df.to_parquet(f"{inputs.output_folder}/group_{group}.parquet", index=False)
 
 if __name__ == "__main__":
     main()
