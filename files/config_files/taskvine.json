@@ -1,4 +1,6 @@
 {
     "port_number": 9124,
-    "parquets_directory": "examples/2split"  
+    "parquets_directory": "imageNet_groups",
+    "url_col": "id",
+    "class_col": "class" 
 }

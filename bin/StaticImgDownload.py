@@ -113,7 +113,7 @@ async def main():
                 # print(f"Error downloading image {file_name}: {error}")
         print(f"Completed with {errors} errors.")
 
-    # Tar the output folder
+    #Tar the output folder
     with tarfile.open(output_tar_path, "w:gz") as tar:
         tar.add(output_folder, arcname=os.path.basename(output_folder))
 
