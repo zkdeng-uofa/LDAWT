@@ -62,7 +62,7 @@ def declare_output_files(manager, directory):
     
     return declared_files
 
-def submit_tasks(manager, download_script, parquet_files, output_files):
+def submit_tasks(manager, download_script, parquet_files, output_files, url_col, class_col):
     """
     Submit download tasks to TaskVine.
     """
@@ -71,7 +71,7 @@ def submit_tasks(manager, download_script, parquet_files, output_files):
     for file_name, declared_file in parquet_files.items():
         # Create the TaskVine task
         download_task = vine.Task(
-            f'python {download_script} --input_path {file_name} --output_tar {file_name.replace(".parquet", ".tar.gz")} --class_name name',
+            f'python {download_script} --input_path {file_name} --output_tar {file_name.replace(".parquet", ".tar.gz")} --url_name {url_col} --class_name {class_col}',
         )
         inputs = declared_file
         outputs = output_files[file_name]

@@ -15,5 +15,6 @@ dependencies:
 - pyarrow
 - ndcctools
 - aiohttp
+- ipykernel
 #- img2dataset=1.42.0
 
