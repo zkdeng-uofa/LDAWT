@@ -1,4 +1,4 @@
-name: LDAWTS
+name: LDAWT
 channels:
 - defaults
 - conda-forge
