@@ -79,7 +79,7 @@ def submit_tasks(manager, download_script, parquet_files, output_files):
         # Add inputs and outputs to the task
         download_task.add_input(download_script_vine, download_script)
         download_task.add_input(inputs, file_name)
-        download_task.add_output(outputs, file_name.replace(".parquet", ".tar.gz"))
+        #download_task.add_output(outputs, file_name.replace(".parquet", ".tar.gz"))
 
         # Submit the task to the manager
         manager.submit(download_task)
@@ -93,8 +93,8 @@ def submit_tasks_cloud(manager, download_script, parquet_files, output_files):
     for file_name, declared_file in parquet_files.items():
         # Create the TaskVine task
         download_task = vine.Task(
-            f'python {download_script} --input_path {file_name} --output_tar {file_name.replace(".parquet", ".tar.gz")} --class_name name && ' +
-            f'gocmd put -f {file_name.replace(".parquet", ".tar.gz")}',
+            f'python {download_script} --input_path {file_name} --output_tar {file_name.replace(".parquet", ".tar.gz")} --class_name species_name && ' +
+            f'gocmd put -f {file_name.replace(".parquet", ".tar.gz")} AIIRA_New_Insects/' ,
         )
         inputs = declared_file
         outputs = output_files[file_name]
@@ -102,7 +102,7 @@ def submit_tasks_cloud(manager, download_script, parquet_files, output_files):
         # Add inputs and outputs to the task
         download_task.add_input(download_script_vine, download_script)
         download_task.add_input(inputs, file_name)
-        #download_task.add_output(outputs, file_name.replace(".parquet", ".tar.gz"))
+        download_task.add_output(outputs, file_name.replace(".parquet", ".tar.gz"))
 
 
         # Submit the task to the manager

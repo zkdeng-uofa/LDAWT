@@ -139,12 +139,12 @@ async def main():
     else:
         print("\nNo successful downloads to compute bandwidth statistics.")
 
-    # Tar the output folder
-    # with tarfile.open(output_tar_path, "w:gz") as tar:
-    #     tar.add(output_folder, arcname=os.path.basename(output_folder))
+    ### Tar the output folder
+    with tarfile.open(output_tar_path, "w:gz") as tar:
+        tar.add(output_folder, arcname=os.path.basename(output_folder))
 
-    # full_path = Path(output_tar_path).resolve()
-    # print(f"\nTared output folder into: {full_path}")
+    full_path = Path(output_tar_path).resolve()
+    print(f"\nTared output folder into: {full_path}")
 
 
 if __name__ == '__main__':

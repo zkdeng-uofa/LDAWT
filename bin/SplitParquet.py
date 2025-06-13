@@ -106,7 +106,7 @@ def partition_df(df, num_partitions, taxon_col):
     sorted_df['group_num'] = ((np.arange(len(sorted_df)) // partition_size) + 1)
 
     # Concatenate the group number to the taxon name
-    sorted_df[taxon_col] = sorted_df[taxon_col] + sorted_df['group_num'].astype(str)
+    sorted_df[taxon_col] = sorted_df[taxon_col] + "_" + sorted_df['group_num'].astype(str)
 
     # Drop the temporary 'group_num' column
     sorted_df = sorted_df.drop(columns=['group_num'])
