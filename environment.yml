@@ -16,5 +16,6 @@ dependencies:
 - ndcctools
 - aiohttp
 - ipykernel
+- gocommands
 #- img2dataset=1.42.0
 
