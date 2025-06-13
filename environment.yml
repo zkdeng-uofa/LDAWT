@@ -13,9 +13,10 @@ dependencies:
 - tqdm=4.64.1
 - tree=2.1.1
 - pyarrow
-- ndcctools
+- ndcctools=7.15.3
 - aiohttp
 - ipykernel
 - gocommands
+- tqdm
 #- img2dataset=1.42.0
 
