@@ -1,2 +1,0 @@
-When using this dataset please use the following citation and pay attention to the rights documented in rights.txt:
-MNHN, Chagnoux S (2024). The vascular plants collection (P) at the Herbarium of the Muséum national d'Histoire Naturelle (MNHN - Paris). Version 69.385. MNHN - Museum national d'Histoire naturelle. Occurrence dataset https://doi.org/10.15468/nc6rxy accessed via GBIF.org on 2024-10-31.

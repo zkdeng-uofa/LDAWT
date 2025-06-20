@@ -96,14 +96,14 @@ def main():
     print(f'Listening on port {manager.port}')
 
     # Declare the input and output files to TaskVine
-    download_script = "bin/ImgDownload.py"
+    download_script = "bin/ImgDownloadBW.py"
     directory = configs['parquets_directory']
     
     parquet_files = declare_parquet_files(manager, directory)
     output_files = declare_output_files(manager, directory)
 
     # Submit the tasks
-    submit_tasks(manager, download_script, parquet_files, output_files)
+    submit_tasks(manager, download_script, parquet_files, output_files, configs['url_col'], configs['class_col'])
 
     # Wait for tasks to complete
     print("Waiting for tasks to complete...")

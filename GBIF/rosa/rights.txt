@@ -1,2 +1,0 @@
-Dataset: The vascular plants collection (P) at the Herbarium of the Muséum national d'Histoire Naturelle (MNHN - Paris) 
-Rights as supplied: http://creativecommons.org/licenses/by/4.0/legalcode
