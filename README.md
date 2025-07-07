@@ -4,52 +4,25 @@ A Python-based distributed parallel workflow system for downloading and processi
 
 ## Table of Contents
 
-- [Large Dataset Acquisition Workflow Template (LDAWT)](#large-dataset-acquisition-workflow-template-ldawt)
-  - [Table of Contents](#table-of-contents)
-  - [Overview](#overview)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-    - [Basic Workflow](#basic-workflow)
-  - [Core Scripts](#core-scripts)
-    - [Dataset Management](#dataset-management)
-      - [`bin/SplitParquet.py`](#binsplitparquetpy)
-      - [`bin/CalcDatasetSize.py`](#bincalcdatasetsizepy)
-    - [Image Downloading](#image-downloading)
-      - [`bin/ImgDownload.py`](#binimgdownloadpy)
-      - [`bin/ImgDownloadBW.py`](#binimgdownloadbwpy)
-      - [`bin/ImgReconstruct.py`](#binimgreconstructpy)
-    - [TaskVine Workflows](#taskvine-workflows)
-      - [`bin/TaskvineLDAWT.py`](#bintaskvineldawtpy)
-      - [`bin/TaskvineLDAWTCloud.py`](#bintaskvineldawtcloudpy)
-    - [Monitoring and Utilities](#monitoring-and-utilities)
-      - [`bin/TaskvineMonitor.py`](#bintaskvinemonitorpy)
-      - [`bin/StartWorker.py`](#binstartworkerpy)
-      - [`bin/compare_files.py`](#bincompare_filespy)
-    - [HPC Integration](#hpc-integration)
-      - [`bin/MakeTaskvineSlurm.py`](#binmaketaskvineslurmpy)
-    - [Data Upload](#data-upload)
-      - [`bin/upload_to_cyverse.py`](#binupload_to_cyversepy)
-  - [Configuration Files](#configuration-files)
-    - [`environment.yml`](#environmentyml)
-    - [Configuration JSON Format](#configuration-json-format)
-  - [Jupyter Notebooks](#jupyter-notebooks)
-    - [`jupyter/LDAWT.ipynb`](#jupyterldawtipynb)
-    - [`jupyter/LDAWTest.ipynb`](#jupyterldawtestipynb)
-  - [Usage Examples](#usage-examples)
-    - [Complete Workflow Example](#complete-workflow-example)
-    - [Cloud Integration Example](#cloud-integration-example)
-    - [HPC Cluster Example](#hpc-cluster-example)
-  - [Performance Optimization](#performance-optimization)
-    - [System Configuration](#system-configuration)
-    - [TaskVine Optimization](#taskvine-optimization)
-    - [Best Practices](#best-practices)
-  - [Troubleshooting](#troubleshooting)
-    - [Common Issues](#common-issues)
-    - [Diagnostic Commands](#diagnostic-commands)
-  - [Contributing](#contributing)
-  - [License](#license)
-  - [Contact](#contact)
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Core Scripts](#core-scripts)
+  - [Dataset Management](#dataset-management)
+  - [Image Downloading](#image-downloading)
+  - [TaskVine Workflows](#taskvine-workflows)
+  - [Monitoring and Utilities](#monitoring-and-utilities)
+  - [HPC Integration](#hpc-integration)
+  - [Data Upload](#data-upload)
+- [Configuration Files](#configuration-files)
+- [Jupyter Notebooks](#jupyter-notebooks)
+- [Usage Examples](#usage-examples)
+- [Performance Optimization](#performance-optimization)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
 
 ## Overview
 
@@ -119,7 +92,7 @@ LDAWT provides a comprehensive suite of Python scripts organized by functionalit
 
 ### Dataset Management
 
-#### `bin/SplitParquet.py`
+#### bin/SplitParquet.py
 Intelligently partitions large parquet files into balanced groups for distributed processing.
 
 **Purpose**: Creates balanced data splits based on grouping columns to ensure even workload distribution across workers.
@@ -139,12 +112,12 @@ python bin/SplitParquet.py \
 ```
 
 **Parameters**:
-- `--parquet`: Input parquet file path
-- `--grouping_col`: Column name to group data by
-- `--groups`: Number of output groups to create
-- `--output_folder`: Directory for output parquet files
+- --parquet: Input parquet file path
+- --grouping_col: Column name to group data by
+- --groups: Number of output groups to create
+- --output_folder: Directory for output parquet files
 
-#### `bin/CalcDatasetSize.py`
+#### bin/CalcDatasetSize.py
 Estimates total storage requirements for image datasets by analyzing URL headers.
 
 **Purpose**: Provides size estimates for planning storage and bandwidth requirements before downloading.
@@ -162,11 +135,9 @@ python bin/CalcDatasetSize.py \
     --url_column photo_url
 ```
 
-**Output**: Total dataset size in MB/GB and count of unresolvable URLs
-
 ### Image Downloading
 
-#### `bin/ImgDownload.py`
+#### bin/ImgDownload.py
 Basic asynchronous image downloader with format detection and retry mechanisms.
 
 **Purpose**: Downloads images from URLs with automatic format detection and error handling.
@@ -187,7 +158,7 @@ python bin/ImgDownload.py \
     --class_name species_name
 ```
 
-#### `bin/ImgDownloadBW.py`
+#### bin/ImgDownloadBW.py
 Enhanced image downloader with bandwidth monitoring, size limits, and advanced error handling.
 
 **Purpose**: Production-ready image downloading with comprehensive monitoring and optimization.
@@ -198,7 +169,6 @@ Enhanced image downloader with bandwidth monitoring, size limits, and advanced e
 - Graceful shutdown handling (SIGINT/SIGTERM)
 - Configurable timeout and concurrency
 - Detailed progress reporting
-- Resource usage optimization
 
 **Usage**:
 ```bash
@@ -212,12 +182,7 @@ python bin/ImgDownloadBW.py \
     --max_file_size 52428800
 ```
 
-**Advanced Parameters**:
-- `--concurrent_downloads`: Concurrent download limit (default: 1000)
-- `--timeout`: Individual download timeout in seconds (default: 30)
-- `--max_file_size`: Maximum file size in bytes (default: 500MB)
-
-#### `bin/ImgReconstruct.py`
+#### bin/ImgReconstruct.py
 Extracts and reconstructs images from parquet files containing binary image data.
 
 **Purpose**: Converts stored binary image data back to standard image formats.
@@ -240,7 +205,7 @@ python bin/ImgReconstruct.py \
 
 ### TaskVine Workflows
 
-#### `bin/TaskvineLDAWT.py`
+#### bin/TaskvineLDAWT.py
 Basic TaskVine manager for distributed image downloading workflows.
 
 **Purpose**: Orchestrates basic distributed downloading across multiple worker machines.
@@ -256,17 +221,7 @@ Basic TaskVine manager for distributed image downloading workflows.
 python bin/TaskvineLDAWT.py --config_file config.json
 ```
 
-**Configuration Requirements**:
-```json
-{
-    "port_number": 9124,
-    "parquets_directory": "split_data",
-    "url_col": "photo_url",
-    "class_col": "species_name"
-}
-```
-
-#### `bin/TaskvineLDAWTCloud.py`
+#### bin/TaskvineLDAWTCloud.py
 Enhanced cloud-optimized TaskVine manager with comprehensive monitoring and error handling.
 
 **Purpose**: Production-ready distributed workflow manager with advanced features for cloud and HPC environments.
@@ -277,14 +232,13 @@ Enhanced cloud-optimized TaskVine manager with comprehensive monitoring and erro
 - Detailed task monitoring and reporting
 - Configurable timeout and retry settings
 - Cloud storage integration (CyVerse upload)
-- Performance optimization settings
 
 **Usage**:
 ```bash
 python bin/TaskvineLDAWTCloud.py --config_file taskvineCloud.json
 ```
 
-**Advanced Configuration**:
+**Configuration Example**:
 ```json
 {
     "port_number": 9124,
@@ -296,16 +250,9 @@ python bin/TaskvineLDAWTCloud.py --config_file taskvineCloud.json
 }
 ```
 
-**Key Improvements over Basic Version**:
-- Comprehensive task status monitoring
-- Resource allocation optimization
-- Enhanced error reporting
-- Cloud integration capabilities
-- Performance tuning options
-
 ### Monitoring and Utilities
 
-#### `bin/TaskvineMonitor.py`
+#### bin/TaskvineMonitor.py
 Real-time system and TaskVine performance monitoring tool.
 
 **Purpose**: Provides comprehensive monitoring of system resources and TaskVine workflow performance.
@@ -315,9 +262,7 @@ Real-time system and TaskVine performance monitoring tool.
 - TaskVine port status checking
 - Network I/O tracking
 - File descriptor monitoring
-- Configurable monitoring intervals
 - Alert system for resource thresholds
-- Persistent logging
 
 **Usage**:
 ```bash
@@ -328,14 +273,7 @@ python bin/TaskvineMonitor.py \
     --disk_path /data/storage
 ```
 
-**Monitoring Capabilities**:
-- System resource utilization
-- TaskVine manager connectivity
-- Network bandwidth usage
-- Storage space monitoring
-- Performance alerts and warnings
-
-#### `bin/StartWorker.py`
+#### bin/StartWorker.py
 Optimized TaskVine worker startup with automatic resource detection.
 
 **Purpose**: Simplifies worker deployment with intelligent resource allocation and monitoring.
@@ -345,8 +283,6 @@ Optimized TaskVine worker startup with automatic resource detection.
 - Optimal CPU, memory, and disk allocation
 - Configurable resource overrides
 - Worker health monitoring
-- Automatic cleanup on shutdown
-- Integration with TaskVine monitoring
 
 **Usage**:
 ```bash
@@ -358,38 +294,21 @@ python bin/StartWorker.py \
     --disk 50000
 ```
 
-**Auto-Detection Features**:
-- CPU cores (reserves 1 for system)
-- Memory allocation (uses 80% of available)
-- Disk space (uses 70% of free space)
-
-#### `bin/compare_files.py`
+#### bin/compare_files.py
 Utility for comparing file listings between cloud storage and local systems.
 
 **Purpose**: Helps synchronize and verify file transfers between different storage systems.
-
-**Key Features**:
-- Compares cloud vs local file inventories
-- Identifies missing files in either location
-- Generates synchronization reports
-- Supports different file listing formats
 
 **Usage**:
 ```bash
 python bin/compare_files.py
 ```
 
-**Input Files**:
-- `new_insects_cloud.txt`: Cloud file listing
-- `new_insects_local.txt`: Local file listing
-
-**Output Files**:
-- `new_insects_not_cloud.txt`: Files in cloud but not local
-- `new_insects_not_local.txt`: Files in local but not cloud
+**Input/Output**: Compares new_insects_cloud.txt vs new_insects_local.txt and generates difference reports.
 
 ### HPC Integration
 
-#### `bin/MakeTaskvineSlurm.py`
+#### bin/MakeTaskvineSlurm.py
 Generates SLURM batch scripts for HPC cluster integration.
 
 **Purpose**: Facilitates deployment of TaskVine workers on SLURM-managed HPC clusters.
@@ -398,49 +317,34 @@ Generates SLURM batch scripts for HPC cluster integration.
 - Automatic IP address detection
 - SLURM script generation
 - Configurable resource requests
-- Environment setup automation
 
 **Usage**:
 ```bash
 python bin/MakeTaskvineSlurm.py
 ```
 
-**Generated Script Features**:
-- SLURM job configuration
-- Conda environment activation
-- Automatic worker submission
-- Resource specification
-
 ### Data Upload
 
-#### `bin/upload_to_cyverse.py`
+#### bin/upload_to_cyverse.py
 Parallel file upload utility for CyVerse data storage.
 
 **Purpose**: Efficiently uploads large datasets to CyVerse data store using parallel processing.
 
 **Key Features**:
-- Parallel upload processing (configurable concurrency)
+- Parallel upload processing (25 concurrent by default)
 - Progress tracking and reporting
 - Error handling and retry logic
 - File existence verification
-- Upload time monitoring
 
 **Usage**:
 ```bash
 python bin/upload_to_cyverse.py
 ```
 
-**Configuration**:
-- Reads from `new_insects_not_local.txt`
-- Uploads to `AIIRA_New_Insects` directory
-- Uses 25 concurrent uploads by default
-
 ## Configuration Files
 
-### `environment.yml`
-Conda environment specification with all required dependencies:
-
-**Key Dependencies**:
+### environment.yml
+Conda environment specification with all required dependencies including:
 - Python 3.10.8
 - TaskVine (ndcctools=7.14.3)
 - Data processing: pandas, pyarrow, numpy
@@ -448,130 +352,52 @@ Conda environment specification with all required dependencies:
 - System monitoring: psutil
 - Progress tracking: tqdm
 - Cloud integration: gocommands
-- Jupyter support: ipykernel
-
-### Configuration JSON Format
-TaskVine workflows use JSON configuration files:
-
-```json
-{
-    "port_number": 9124,
-    "parquets_directory": "data/split",
-    "class_col": "species_name",
-    "url_col": "photo_url",
-    "timeout_minutes": 30,
-    "max_retries": 3
-}
-```
 
 ## Jupyter Notebooks
 
-### `jupyter/LDAWT.ipynb`
-Main workflow demonstration notebook showcasing complete LDAWT usage.
+### jupyter/LDAWT.ipynb
+Main workflow demonstration notebook showcasing complete LDAWT usage including environment setup, dataset size calculation, TaskVine workflow execution, and performance monitoring.
 
-**Contents**:
-- Environment setup and verification
-- Dataset size calculation examples
-- TaskVine workflow execution
-- IP address configuration for distributed setup
-- Performance monitoring examples
-
-### `jupyter/LDAWTest.ipynb`
-Testing and example notebook for development and validation.
-
-**Contents**:
-- Quick testing workflows
-- Configuration validation
-- Small-scale dataset examples
-- Performance benchmarking
+### jupyter/LDAWTest.ipynb
+Testing and example notebook for development and validation with quick testing workflows, configuration validation, and small-scale dataset examples.
 
 ## Usage Examples
 
 ### Complete Workflow Example
 
-1. **Prepare Dataset**
+1. **Split Dataset**
    ```bash
-   # Split large dataset into manageable chunks
-   python bin/SplitParquet.py \
-       --parquet large_dataset.parquet \
-       --grouping_col species_name \
-       --groups 50 \
-       --output_folder split_data
+   python bin/SplitParquet.py --parquet large_dataset.parquet --grouping_col species_name --groups 50 --output_folder split_data
    ```
 
-2. **Estimate Storage Requirements**
+2. **Estimate Storage**
    ```bash
-   # Calculate total size needed
-   python bin/CalcDatasetSize.py \
-       --directory split_data \
-       --url_column photo_url
+   python bin/CalcDatasetSize.py --directory split_data --url_column photo_url
    ```
 
 3. **Start Monitoring**
    ```bash
-   # Launch system monitor
-   python bin/TaskvineMonitor.py \
-       --port 9124 \
-       --interval 10 \
-       --log_file workflow.log
+   python bin/TaskvineMonitor.py --port 9124 --interval 10 --log_file workflow.log
    ```
 
 4. **Launch Manager**
    ```bash
-   # Start TaskVine manager
-   python bin/TaskvineLDAWTCloud.py \
-       --config_file config.json
+   python bin/TaskvineLDAWTCloud.py --config_file config.json
    ```
 
 5. **Deploy Workers** (on multiple machines)
    ```bash
-   # Start optimized workers
-   python bin/StartWorker.py \
-       --manager_host MANAGER_IP \
-       --manager_port 9124
+   python bin/StartWorker.py --manager_host MANAGER_IP --manager_port 9124
    ```
-
-### Cloud Integration Example
-
-```bash
-# Complete workflow with cloud upload
-python bin/TaskvineLDAWTCloud.py --config_file cloud_config.json
-
-# Upload results to CyVerse
-python bin/upload_to_cyverse.py
-```
-
-### HPC Cluster Example
-
-```bash
-# Generate SLURM script
-python bin/MakeTaskvineSlurm.py
-
-# Submit to SLURM
-sbatch taskvine.slurm
-```
 
 ## Performance Optimization
 
-### System Configuration
-- **Memory**: Allocate 80% of available memory to workers
-- **CPU**: Reserve 1 core for system operations
-- **Disk**: Ensure 70% free space for temporary files
-- **Network**: Use appropriate concurrency limits (50-100 downloads per worker)
-
-### TaskVine Optimization
-- **Resource Allocation**: Specify CPU, memory, and disk requirements
-- **Timeout Settings**: Balance between patience and efficiency
-- **Retry Logic**: Configure appropriate retry counts for network failures
-- **Monitoring**: Use real-time monitoring to identify bottlenecks
-
 ### Best Practices
-1. Start with monitoring to establish baseline performance
-2. Use moderate concurrency to avoid overwhelming servers
-3. Monitor network bandwidth to prevent connection saturation
-4. Set appropriate timeouts based on expected file sizes
-5. Deploy multiple workers for horizontal scaling
-6. Regular cleanup of temporary files and logs
+- Use moderate concurrency (50-100 downloads per worker)
+- Monitor system resources with TaskvineMonitor
+- Configure appropriate timeouts based on file sizes
+- Deploy multiple workers for horizontal scaling
+- Regular cleanup of temporary files
 
 For detailed optimization guidance, see [OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md).
 
@@ -579,44 +405,34 @@ For detailed optimization guidance, see [OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUI
 
 ### Common Issues
 
-**Tasks Stop After Limited Executions**
-- **Cause**: Resource exhaustion or missing output declarations
-- **Solution**: Use optimized scripts with proper resource management
+**Tasks Stop After Limited Executions**: Use optimized scripts with proper resource management
 
-**Workers Disconnect Frequently**
-- **Cause**: Resource limits or network timeouts
-- **Solution**: Use `StartWorker.py` for auto-resource detection
+**Workers Disconnect**: Use StartWorker.py for auto-resource detection
 
-**High Memory Usage**
-- **Cause**: Too many concurrent downloads or large files
-- **Solution**: Reduce concurrency and implement file size limits
+**High Memory Usage**: Reduce concurrency and implement file size limits
 
-**Network Timeouts**
-- **Cause**: No request timeouts or poor connection handling
-- **Solution**: Configure appropriate timeouts and connection pooling
+**Network Timeouts**: Configure appropriate timeouts and connection pooling
 
 ### Diagnostic Commands
 
 ```bash
-# Check system resources
+# Monitor system resources
 python bin/TaskvineMonitor.py --port 9124
 
-# View worker status
+# Check worker status
 vine_status MANAGER_IP:9124
 
-# Check log files
+# View logs
 tail -f taskvine_monitor.log
 ```
 
 ## Contributing
 
-Contributions are welcome! Please follow these guidelines:
-
+Contributions are welcome! Please:
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes with proper documentation
-4. Add tests for new functionality
-5. Submit a pull request
+3. Add proper documentation and tests
+4. Submit a pull request
 
 ## License
 
@@ -631,4 +447,4 @@ Please consult zkdeng@arizona.edu for licensing and usage terms.
 **Acknowledgments**:
 - University of Arizona Data Science Institute
 - Nirav Merchant - nirav@arizona.edu
-- TaskVine Development Team at University of Notre Dame 
+- TaskVine Development Team at University of Notre Dame
