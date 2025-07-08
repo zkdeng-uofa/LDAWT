@@ -9,6 +9,7 @@ import tarfile
 import time
 import mimetypes
 import argparse
+import json
 from pathlib import Path
 from tqdm.asyncio import tqdm
 import signal
@@ -20,10 +21,10 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Download images asynchronously, track bandwidth, and tar the output folder.")
     
-    parser.add_argument("--input_path", type=str, required=True, help="Path to the input CSV or Parquet file.")
-    parser.add_argument("--output_tar", type=str, required=True, help="Path to the output tar file (e.g., 'images.tar.gz').")
-    parser.add_argument("--url_name", type=str, default="photo_url", help="Column name containing the image URLs.")
-    parser.add_argument("--class_name", type=str, default="taxon_name", help="Column name containing the class names.")
+    parser.add_argument("--input", type=str, required=True, help="Path to the input CSV or Parquet file.")
+    parser.add_argument("--output", type=str, required=True, help="Path to the output tar file (e.g., 'images.tar.gz').")
+    parser.add_argument("--url", type=str, default="photo_url", help="Column name containing the image URLs.")
+    parser.add_argument("--label", type=str, default="taxon_name", help="Column name containing the class names.")
     parser.add_argument("--concurrent_downloads", type=int, default=1000, help="Number of concurrent downloads (default: 50).")
     parser.add_argument("--timeout", type=int, default=30, help="Download timeout in seconds (default: 30).")
     parser.add_argument("--max_file_size", type=int, default=500*1024*1024, help="Maximum file size in bytes (default: 500MB).")
@@ -153,22 +154,20 @@ async def main():
     
     args = parse_args()
 
-    input_path = args.input_path
-    output_tar_path = args.output_tar
-    url_col = args.url_name
-    class_col = args.class_name
+    input = args.input
+    output_path = args.output
+    url_col = args.url
+    class_col = args.label
     concurrent_downloads = args.concurrent_downloads
     timeout = args.timeout
     max_file_size = args.max_file_size
 
     # Validate inputs
-    if not os.path.exists(input_path):
-        print(f"Error: Input file {input_path} not found")
+    if not os.path.exists(input):
+        print(f"Error: Input file {input} not found")
         sys.exit(1)
 
-    output_folder = os.path.splitext(os.path.basename(output_tar_path))[0]
-    if output_tar_path.endswith(".tar.gz"):
-        output_folder = os.path.splitext(output_folder)[0]
+    output_folder = os.path.splitext(os.path.basename(output_path))[0]
 
     # Clean up any existing output folder
     if os.path.exists(output_folder):
@@ -176,10 +175,10 @@ async def main():
 
     # Load data
     try:
-        if input_path.endswith(".parquet"):
-            df = pd.read_parquet(input_path)
-        elif input_path.endswith(".csv"):
-            df = pd.read_csv(input_path)
+        if input.endswith(".parquet"):
+            df = pd.read_parquet(input)
+        elif input.endswith(".csv"):
+            df = pd.read_csv(input)
         else:
             print("Unsupported file format. Please provide a CSV or Parquet file.")
             sys.exit(1)
@@ -239,7 +238,7 @@ async def main():
             for _, row in df.iterrows()
         ]
         
-        errors = 0
+        error_details = []  # List to track detailed error information
         successful_downloads = 0
         
         try:
@@ -250,7 +249,13 @@ async def main():
                     
                 key, file_name, class_name, error = await future
                 if error:
-                    errors += 1
+                    error_details.append({
+                        'key': key,
+                        'class': class_name,
+                        'error': error
+                    })
+                    # Print error in real-time
+                    print(f"\n[ERROR] Key: {key}, Class: {class_name}, Error: {error}")
                 else:
                     successful_downloads += 1
         except KeyboardInterrupt:
@@ -259,11 +264,74 @@ async def main():
 
     total_time = time.monotonic() - start_time  # Total time taken
     total_downloaded = sum(total_bytes)  # Total bytes downloaded
+    total_errors = len(error_details)
 
     print(f"\nDownload Summary:")
     print(f"  - Successful downloads: {successful_downloads}")
-    print(f"  - Failed downloads: {errors}")
-    print(f"  - Success rate: {(successful_downloads/(successful_downloads+errors)*100):.1f}%")
+    print(f"  - Failed downloads: {total_errors}")
+    if successful_downloads + total_errors > 0:
+        print(f"  - Success rate: {(successful_downloads/(successful_downloads+total_errors)*100):.1f}%")
+    
+    # Display detailed error breakdown
+    if total_errors > 0:
+        print(f"\nError Breakdown:")
+        error_counts = {}
+        for error_info in error_details:
+            error_type = error_info['error']
+            if error_type in error_counts:
+                error_counts[error_type] += 1
+            else:
+                error_counts[error_type] = 1
+        
+        for error_type, count in sorted(error_counts.items(), key=lambda x: x[1], reverse=True):
+            print(f"  - {error_type}: {count} occurrences")
+
+    # Create JSON overview file
+    overview_data = {
+        "script_inputs": {
+            "input_file": input,
+            "output_file": output_path,
+            "url_column": url_col,
+            "label_column": class_col,
+            "concurrent_downloads": concurrent_downloads,
+            "timeout": timeout,
+            "max_file_size": max_file_size
+        },
+        "download_summary": {
+            "total_records_processed": len(df),
+            "successful_downloads": successful_downloads,
+            "failed_downloads": total_errors,
+            "success_rate_percent": round((successful_downloads/(successful_downloads+total_errors)*100), 2) if (successful_downloads + total_errors) > 0 else 0,
+            "total_data_mb": round(total_downloaded / 1e6, 2) if total_downloaded > 0 else 0,
+            "total_time_seconds": round(total_time, 2),
+            "average_speed_mbps": round((total_downloaded / total_time) / 1e6, 2) if total_time > 0 and total_downloaded > 0 else 0
+        },
+        "error_breakdown": {},
+        "execution_info": {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "shutdown_requested": shutdown_flag
+        }
+    }
+    
+    # Add error breakdown to JSON
+    if total_errors > 0:
+        error_counts = {}
+        for error_info in error_details:
+            error_type = error_info['error']
+            if error_type in error_counts:
+                error_counts[error_type] += 1
+            else:
+                error_counts[error_type] = 1
+        overview_data["error_breakdown"] = error_counts
+    
+    # Write JSON overview file
+    json_filename = os.path.splitext(output_path)[0] + "_overview.json"
+    try:
+        with open(json_filename, 'w') as json_file:
+            json.dump(overview_data, json_file, indent=2)
+        print(f"Created overview file: {json_filename}")
+    except Exception as e:
+        print(f"Warning: Could not create overview JSON file: {e}")
 
     if total_time > 0 and total_downloaded > 0:
         avg_speed = total_downloaded / total_time  # Bytes per second
@@ -276,16 +344,16 @@ async def main():
     # Only create tar if we have successful downloads and no shutdown was requested
     if successful_downloads > 0 and not shutdown_flag and os.path.exists(output_folder):
         try:
-            print(f"\nCreating tar archive: {output_tar_path}")
-            with tarfile.open(output_tar_path, "w:gz") as tar:
+            print(f"\nCreating tar archive: {output_path}")
+            with tarfile.open(output_path, "w") as tar:
                 tar.add(output_folder, arcname=os.path.basename(output_folder))
 
-            full_path = Path(output_tar_path).resolve()
-            tar_size = os.path.getsize(output_tar_path)
+            full_path = Path(output_path).resolve()
+            tar_size = os.path.getsize(output_path)
             print(f"Created tar archive: {full_path} ({tar_size / 1e6:.2f} MB)")
             
             # Clean up the temporary folder
-            shutil.rmtree(output_folder)
+            #shutil.rmtree(output_folder)
             
         except Exception as e:
             print(f"Error creating tar archive: {e}")
@@ -295,7 +363,7 @@ async def main():
             print("Shutdown was requested, skipping tar creation")
         elif successful_downloads == 0:
             print("No successful downloads, skipping tar creation")
-        sys.exit(1 if errors > 0 else 0)
+        sys.exit(1 if total_errors > 0 else 0)
 
 if __name__ == '__main__':
     asyncio.run(main())
