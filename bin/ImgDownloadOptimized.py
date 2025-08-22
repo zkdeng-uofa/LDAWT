@@ -32,8 +32,11 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Download images asynchronously, track bandwidth, and tar the output folder.")
     
-    parser.add_argument("--input", type=str, required=True, help="Path to the input CSV or Parquet file.")
-    parser.add_argument("--output", type=str, required=True, help="Path to the output tar file (e.g., 'images.tar.gz').")
+    # JSON configuration file option
+    parser.add_argument("--config", type=str, help="Path to JSON configuration file. If specified, all other arguments are ignored.")
+    
+    parser.add_argument("--input", type=str, help="Path to the input CSV or Parquet file.")
+    parser.add_argument("--output", type=str, help="Path to the output tar file (e.g., 'images.tar.gz').")
     parser.add_argument("--url", type=str, default="photo_url", help="Column name containing the image URLs.")
     parser.add_argument("--label", type=str, default="taxon_name", help="Column name containing the class names.")
     parser.add_argument("--concurrent_downloads", type=int, default=1000, help="Number of concurrent downloads (default: 1000).")
@@ -45,7 +48,83 @@ def parse_args():
     parser.add_argument("--max_retry_attempts", type=int, default=3, help="Maximum retry attempts for 429 errors (default: 3).")
     parser.add_argument("--retry_delay", type=float, default=2.0, help="Delay between retry attempts in seconds (default: 2.0).")
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # If JSON config is specified, load it and override all other arguments
+    if args.config:
+        return load_json_config(args.config)
+    else:
+        # Validate required arguments when not using JSON config
+        if not args.input:
+            parser.error("--input is required when not using --config")
+        if not args.output:
+            parser.error("--output is required when not using --config")
+        return args
+
+def load_json_config(config_path):
+    """
+    Load configuration from JSON file and return as argparse.Namespace object.
+    """
+    try:
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: Configuration file '{config_path}' not found.")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in configuration file '{config_path}': {e}")
+        sys.exit(1)
+    
+    # Define required fields and defaults
+    required_fields = ['input', 'output']
+    defaults = {
+        'url': 'photo_url',
+        'label': 'taxon_name',
+        'concurrent_downloads': 1000,
+        'timeout': 30,
+        'max_file_size': 500*1024*1024,
+        'rate_limit': 100.0,
+        'rate_capacity': 200,
+        'enable_rate_limiting': False,
+        'max_retry_attempts': 3,
+        'retry_delay': 2.0
+    }
+    
+    # Check required fields
+    for field in required_fields:
+        if field not in config_data:
+            print(f"Error: Required field '{field}' not found in JSON configuration.")
+            sys.exit(1)
+    
+    # Apply defaults for missing optional fields
+    for field, default_value in defaults.items():
+        if field not in config_data:
+            config_data[field] = default_value
+    
+    # Validate data types
+    type_validators = {
+        'input': str,
+        'output': str,
+        'url': str,
+        'label': str,
+        'concurrent_downloads': int,
+        'timeout': int,
+        'max_file_size': int,
+        'rate_limit': (int, float),
+        'rate_capacity': int,
+        'enable_rate_limiting': bool,
+        'max_retry_attempts': int,
+        'retry_delay': (int, float)
+    }
+    
+    for field, expected_type in type_validators.items():
+        if field in config_data:
+            if not isinstance(config_data[field], expected_type):
+                print(f"Error: Field '{field}' must be of type {expected_type.__name__ if not isinstance(expected_type, tuple) else ' or '.join(t.__name__ for t in expected_type)}.")
+                sys.exit(1)
+    
+    # Convert to argparse.Namespace for compatibility
+    return argparse.Namespace(**config_data)
 
 class TokenBucket:
     """
@@ -523,6 +602,12 @@ async def main():
     global shutdown_flag
     
     args = parse_args()
+    
+    # Display configuration source
+    if hasattr(args, 'config') and args.config:
+        print(f"Using JSON configuration from: {args.config}")
+    else:
+        print("Using command-line arguments")
 
     input = args.input
     output_path = args.output
