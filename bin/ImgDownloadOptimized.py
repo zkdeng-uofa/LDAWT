@@ -15,6 +15,38 @@ from tqdm.asyncio import tqdm
 import signal
 import shutil
 
+# Global flag for graceful shutdown
+shutdown_flag = False
+
+def signal_handler(sig, frame):
+    global shutdown_flag
+    print("\nReceived interrupt signal. Shutting down gracefully...")
+    shutdown_flag = True
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+def parse_args():
+    """
+    Parse user inputs from arguments using argparse.
+    """
+    parser = argparse.ArgumentParser(description="Download images asynchronously, track bandwidth, and tar the output folder.")
+    
+    parser.add_argument("--input", type=str, required=True, help="Path to the input CSV or Parquet file.")
+    parser.add_argument("--output", type=str, required=True, help="Path to the output tar file (e.g., 'images.tar.gz').")
+    parser.add_argument("--url", type=str, default="photo_url", help="Column name containing the image URLs.")
+    parser.add_argument("--label", type=str, default="taxon_name", help="Column name containing the class names.")
+    parser.add_argument("--concurrent_downloads", type=int, default=1000, help="Number of concurrent downloads (default: 1000).")
+    parser.add_argument("--timeout", type=int, default=30, help="Download timeout in seconds (default: 30).")
+    parser.add_argument("--max_file_size", type=int, default=500*1024*1024, help="Maximum file size in bytes (default: 500MB).")
+    parser.add_argument("--rate_limit", type=float, default=100.0, help="Initial rate limit in requests per second (default: 100.0).")
+    parser.add_argument("--rate_capacity", type=int, default=200, help="Token bucket capacity (default: 200).")
+    parser.add_argument("--enable_rate_limiting", action="store_true", help="Enable token bucket rate limiting.")
+    parser.add_argument("--max_retry_attempts", type=int, default=3, help="Maximum retry attempts for 429 errors (default: 3).")
+    parser.add_argument("--retry_delay", type=float, default=2.0, help="Delay between retry attempts in seconds (default: 2.0).")
+
+    return parser.parse_args()
+
 class TokenBucket:
     """
     A token bucket implementation for rate limiting.
@@ -23,6 +55,7 @@ class TokenBucket:
         """
         Initialize the token bucket.
         :param rate: Number of tokens added per second.
+        
         :param capacity: Maximum number of tokens the bucket can hold.
         """
         self.rate = rate
@@ -51,16 +84,17 @@ class TokenBucket:
         self.tokens = min(self.capacity, self.tokens + new_tokens)
         self.last_refill = now
 
-    def adjust_rate(self, new_rate):
+    def adjust_rate(self, new_rate, reason=""):
         new_rate = max(1, new_rate)  # Minimum 1 request per second
         if abs(new_rate - self.rate) > 0.1:  # Only adjust if significant change
-            print(f"[TokenBucket] Adjusting rate: {self.rate:.2f} -> {new_rate:.2f} tokens/sec")
+            reason_str = f" ({reason})" if reason else ""
+            print(f"[Rate Limit] {self.rate:.2f} -> {new_rate:.2f} req/sec{reason_str}")
             self.rate = new_rate
 
     def get_rate(self):
         return self.rate
 
-async def gradually_increase_rate(token_bucket, max_rate, interval=10):
+async def gradually_increase_rate(token_bucket, max_rate, interval=5):
     """
     Gradually increase the rate limit over time to recover from rate limiting.
     """
@@ -68,38 +102,92 @@ async def gradually_increase_rate(token_bucket, max_rate, interval=10):
         await asyncio.sleep(interval)
         current_rate = token_bucket.get_rate()
         if current_rate < max_rate:
-            new_rate = min(max_rate, current_rate * 1.2)  # Increase by 10%
-            token_bucket.adjust_rate(new_rate)
+            new_rate = min(max_rate, current_rate * 1.2)  # Increase by 20%
+            print(f"[Gradual Recovery] Increasing rate: {current_rate:.2f} -> {new_rate:.2f} req/sec")
+            token_bucket.adjust_rate(new_rate, "rate increase")
+        else:
+            # Optionally log when we're at max rate
+            # print(f"[Gradual Recovery] At maximum rate: {current_rate:.2f} req/sec")
+            pass
 
-def parse_args():
+async def download_batch_with_retries(
+        session, 
+        df_batch, 
+        output_folder, 
+        url_col, 
+        class_col, 
+        total_bytes, 
+        timeout, 
+        max_file_size, 
+        token_bucket, 
+        enable_rate_limiting,
+        concurrent_downloads,
+        attempt_number=1
+    ):
     """
-    Parse user inputs from arguments using argparse.
+    Download a batch of images and return successful downloads and 429 errors for retry.
     """
-    parser = argparse.ArgumentParser(description="Download images asynchronously, track bandwidth, and tar the output folder.")
-    
-    parser.add_argument("--input", type=str, required=True, help="Path to the input CSV or Parquet file.")
-    parser.add_argument("--output", type=str, required=True, help="Path to the output tar file (e.g., 'images.tar.gz').")
-    parser.add_argument("--url", type=str, default="photo_url", help="Column name containing the image URLs.")
-    parser.add_argument("--label", type=str, default="taxon_name", help="Column name containing the class names.")
-    parser.add_argument("--concurrent_downloads", type=int, default=1000, help="Number of concurrent downloads (default: 1000).")
-    parser.add_argument("--timeout", type=int, default=30, help="Download timeout in seconds (default: 30).")
-    parser.add_argument("--max_file_size", type=int, default=500*1024*1024, help="Maximum file size in bytes (default: 500MB).")
-    parser.add_argument("--rate_limit", type=float, default=100.0, help="Initial rate limit in requests per second (default: 100.0).")
-    parser.add_argument("--rate_capacity", type=int, default=200, help="Token bucket capacity (default: 200).")
-    parser.add_argument("--enable_rate_limiting", action="store_true", help="Enable token bucket rate limiting.")
-
-    return parser.parse_args()
-
-# Global flag for graceful shutdown
-shutdown_flag = False
-
-def signal_handler(sig, frame):
     global shutdown_flag
-    print("\nReceived interrupt signal. Shutting down gracefully...")
-    shutdown_flag = True
-
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+    semaphore = asyncio.Semaphore(concurrent_downloads)
+    
+    tasks = [
+        download_image(
+            session, semaphore, row, output_folder, url_col, class_col, 
+            total_bytes, timeout, max_file_size, token_bucket
+        ) 
+        for _, row in df_batch.iterrows()
+    ]
+    
+    error_details = []
+    retry_429_rows = []
+    successful_downloads = 0
+    
+    print(f"\n--- Attempt #{attempt_number} - Processing {len(tasks)} images ---")
+    if enable_rate_limiting and token_bucket:
+        print(f"Current rate limit: {token_bucket.get_rate():.2f} req/sec")
+    
+    try:
+        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc=f"Downloading (attempt {attempt_number})"):
+            if shutdown_flag:
+                print("Shutdown requested, cancelling remaining downloads...")
+                break
+                
+            key, file_name, class_name, error, status_code = await future
+            if error:
+                error_details.append({
+                    'key': key,
+                    'file_name': file_name,
+                    'class': class_name,
+                    'error': error,
+                    'status_code': status_code
+                })
+                
+                # Check if this is a 429 error for retry
+                if status_code == 429 or "429" in str(error):
+                    # Find the original row for retry
+                    original_row = df_batch.loc[df_batch.index == key]
+                    if not original_row.empty:
+                        retry_429_rows.append(original_row.iloc[0])
+                
+                # Adaptive rate control based on error type
+                if token_bucket and enable_rate_limiting:
+                    if status_code == 429 or "429" in str(error):  # Rate limited
+                        new_rate = token_bucket.get_rate() * 0.5  # Reduce rate by 50%
+                        token_bucket.adjust_rate(new_rate, "HTTP 429 rate limited")
+                    elif status_code in [503, 502, 504]:  # Server errors
+                        new_rate = token_bucket.get_rate() * 0.75  # Reduce rate by 25%
+                        token_bucket.adjust_rate(new_rate, f"HTTP {status_code} server error")
+                
+                # Only print non-429 errors in real-time (429s will be retried)
+                if not (status_code == 429 or "429" in str(error)):
+                    print(f"\n[ERROR] Key: {key}, Error: {error}, Status Code: {status_code}")
+            else:
+                successful_downloads += 1
+    except KeyboardInterrupt:
+        print("Download interrupted by user")
+        shutdown_flag = True
+    
+    return successful_downloads, error_details, retry_429_rows
 
 def save_and_track(content, file_path, max_file_size, total_bytes):
     """Helper function to write content to file and track size"""
@@ -446,6 +534,8 @@ async def main():
     rate_limit = args.rate_limit
     rate_capacity = args.rate_capacity
     enable_rate_limiting = args.enable_rate_limiting
+    max_retry_attempts = args.max_retry_attempts
+    retry_delay = args.retry_delay
     output_folder = os.path.splitext(os.path.basename(output_path))[0]
 
     # Validate inputs
@@ -459,9 +549,7 @@ async def main():
     else:
         print(f"Processing {filtered_count} images with {concurrent_downloads} concurrent downloads (no rate limiting)")
 
-    semaphore = asyncio.Semaphore(concurrent_downloads)
     total_bytes = []  # List to track total bytes downloaded
-
     start_time = time.monotonic()  # Start timer
 
     # Configure session with connection pooling and limits
@@ -475,8 +563,9 @@ async def main():
     # Start rate recovery task if rate limiting is enabled
     recovery_task = None
     if enable_rate_limiting and token_bucket:
+        print(f"Starting rate increase (target: {rate_limit*10:.1f} req/sec, interval: 5s)")
         recovery_task = asyncio.create_task(
-            gradually_increase_rate(token_bucket, rate_limit, interval=5)
+            gradually_increase_rate(token_bucket, rate_limit*10, interval=5)
         )
     
     async with aiohttp.ClientSession(
@@ -484,53 +573,56 @@ async def main():
         timeout=aiohttp.ClientTimeout(total=timeout*2),  # Overall session timeout
         headers={'User-Agent': 'LDAWT-ImageDownloader/1.0'}
     ) as session:
-        tasks = [
-            download_image(
-                session, semaphore, row, output_folder, url_col, class_col, 
-                total_bytes, timeout, max_file_size, token_bucket
-            ) 
-            for _, row in df.iterrows()
-        ]
         
-        error_details = []  # List to track detailed error information
-        successful_downloads = 0
+        # Initialize tracking variables
+        all_error_details = []
+        total_successful_downloads = 0
+        current_df = df.copy()
+        attempt = 1
         
-        try:
-            for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Downloading"):
-                if shutdown_flag:
-                    print("Shutdown requested, cancelling remaining downloads...")
-                    break
-                    
-                key, file_name, class_name, error, status_code = await future
-                if error:
-                    error_details.append({
-                        'key': key,
-                        'file_name': file_name,
-                        'class': class_name,
-                        'error': error,
-                        'status_code': status_code
-                    })
-                    
-                    # Adaptive rate control based on error type
-                    if token_bucket and enable_rate_limiting:
-                        if status_code == 429 or "429" in str(error):  # Rate limited
-                            new_rate = token_bucket.get_rate() * 0.5  # Reduce rate by 50%
-                            token_bucket.adjust_rate(new_rate)
-                        elif status_code in [503, 502, 504]:  # Server errors
-                            new_rate = token_bucket.get_rate() * 0.75  # Reduce rate by 25%
-                            token_bucket.adjust_rate(new_rate)
-                    
-                    # Print error in real-time
-                    print(f"\n[ERROR] Key: {key}, Error: {error}, Status Code: {status_code}")
-                else:
-                    successful_downloads += 1
-        except KeyboardInterrupt:
-            print("Download interrupted by user")
-            shutdown_flag = True
+        # Main download loop with retries
+        while attempt <= max_retry_attempts and not current_df.empty and not shutdown_flag:
+            # Download current batch
+            successful_downloads, error_details, retry_429_rows = await download_batch_with_retries(
+                session, current_df, output_folder, url_col, class_col, 
+                total_bytes, timeout, max_file_size, token_bucket, 
+                enable_rate_limiting, concurrent_downloads, attempt
+            )
+            
+            total_successful_downloads += successful_downloads
+            all_error_details.extend(error_details)
+            
+            # Count 429 errors for this attempt
+            count_429 = len(retry_429_rows)
+            non_429_errors = len(error_details) - count_429
+            
+            print(f"\nAttempt #{attempt} Results:")
+            print(f"  - Successful downloads: {successful_downloads}")
+            print(f"  - HTTP 429 errors (will retry): {count_429}")
+            print(f"  - Other errors: {non_429_errors}")
+            
+            # Prepare for next attempt if there are 429 errors
+            if retry_429_rows and attempt < max_retry_attempts and not shutdown_flag:
+                current_df = pd.DataFrame(retry_429_rows)
+                attempt += 1
+                print(f"\nWaiting {retry_delay} seconds before retry attempt...")
+                await asyncio.sleep(retry_delay)
+            else:
+                break
+        
+        # Final results
+        if retry_429_rows and attempt > max_retry_attempts:
+            print(f"\nReached maximum retry attempts ({max_retry_attempts}). {len(retry_429_rows)} items with 429 errors will not be retried.")
+        elif not retry_429_rows:
+            print(f"\nAll downloads completed successfully or no 429 errors to retry.")
     
     # Cancel recovery task if it was started
     if recovery_task:
         recovery_task.cancel()
+    
+    # Use the aggregated results
+    successful_downloads = total_successful_downloads
+    error_details = all_error_details
 
     total_time = time.monotonic() - start_time  # Total time taken
     total_downloaded = sum(total_bytes)  # Total bytes downloaded
