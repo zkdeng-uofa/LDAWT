@@ -218,7 +218,7 @@ async def download_batch_with_retries(
     ]
     
     error_details = []
-    retry_429_rows = []
+    retry_rows = []  # Renamed to include both 429 and timeout errors
     successful_downloads = 0
     
     print(f"\n--- Attempt #{attempt_number} - Processing {len(tasks)} images ---")
@@ -241,24 +241,30 @@ async def download_batch_with_retries(
                     'status_code': status_code
                 })
                 
-                # Check if this is a 429 error for retry
-                if status_code == 429 or "429" in str(error):
+                # Check if this is a 429 error or timeout error for retry
+                is_429_error = status_code == 429 or "429" in str(error)
+                is_timeout_error = "Timeout" in str(error) or status_code == 0
+                
+                if is_429_error or is_timeout_error:
                     # Find the original row for retry
                     original_row = df_batch.loc[df_batch.index == key]
                     if not original_row.empty:
-                        retry_429_rows.append(original_row.iloc[0])
+                        retry_rows.append(original_row.iloc[0])
                 
                 # Adaptive rate control based on error type
                 if token_bucket and enable_rate_limiting:
                     if status_code == 429 or "429" in str(error):  # Rate limited
                         new_rate = token_bucket.get_rate() * 0.5  # Reduce rate by 50%
                         token_bucket.adjust_rate(new_rate, "HTTP 429 rate limited")
+                    elif "Timeout" in str(error) or status_code == 0:  # Timeout errors
+                        new_rate = token_bucket.get_rate() * 0.6  # Reduce rate by 40%
+                        token_bucket.adjust_rate(new_rate, "timeout error")
                     elif status_code in [503, 502, 504]:  # Server errors
                         new_rate = token_bucket.get_rate() * 0.75  # Reduce rate by 25%
                         token_bucket.adjust_rate(new_rate, f"HTTP {status_code} server error")
                 
-                # Only print non-429 errors in real-time (429s will be retried)
-                if not (status_code == 429 or "429" in str(error)):
+                # Only print errors that won't be retried in real-time
+                if not (is_429_error or is_timeout_error):
                     print(f"\n[ERROR] Key: {key}, Error: {error}, Status Code: {status_code}")
             else:
                 successful_downloads += 1
@@ -266,7 +272,7 @@ async def download_batch_with_retries(
         print("Download interrupted by user")
         shutdown_flag = True
     
-    return successful_downloads, error_details, retry_429_rows
+    return successful_downloads, error_details, retry_rows
 
 def save_and_track(content, file_path, max_file_size, total_bytes):
     """Helper function to write content to file and track size"""
@@ -668,7 +674,7 @@ async def main():
         # Main download loop with retries
         while attempt <= max_retry_attempts and not current_df.empty and not shutdown_flag:
             # Download current batch
-            successful_downloads, error_details, retry_429_rows = await download_batch_with_retries(
+            successful_downloads, error_details, retry_rows = await download_batch_with_retries(
                 session, current_df, output_folder, url_col, class_col, 
                 total_bytes, timeout, max_file_size, token_bucket, 
                 enable_rate_limiting, concurrent_downloads, attempt
@@ -677,18 +683,21 @@ async def main():
             total_successful_downloads += successful_downloads
             all_error_details.extend(error_details)
             
-            # Count 429 errors for this attempt
-            count_429 = len(retry_429_rows)
-            non_429_errors = len(error_details) - count_429
+            # Count retry errors (429 and timeout) for this attempt
+            count_retry_errors = len(retry_rows)
+            # Count specific error types in error details
+            count_429 = sum(1 for error in error_details if error.get('status_code') == 429 or "429" in str(error.get('error', '')))
+            count_timeouts = sum(1 for error in error_details if "Timeout" in str(error.get('error', '')) or error.get('status_code') == 0)
+            non_retry_errors = len(error_details) - count_retry_errors
             
             print(f"\nAttempt #{attempt} Results:")
             print(f"  - Successful downloads: {successful_downloads}")
-            print(f"  - HTTP 429 errors (will retry): {count_429}")
-            print(f"  - Other errors: {non_429_errors}")
+            print(f"  - Retry errors (429 + timeout): {count_retry_errors}")
+            print(f"  - Other errors: {non_retry_errors}")
             
-            # Prepare for next attempt if there are 429 errors
-            if retry_429_rows and attempt < max_retry_attempts and not shutdown_flag:
-                current_df = pd.DataFrame(retry_429_rows)
+            # Prepare for next attempt if there are retry errors
+            if retry_rows and attempt < max_retry_attempts and not shutdown_flag:
+                current_df = pd.DataFrame(retry_rows)
                 attempt += 1
                 print(f"\nWaiting {retry_delay} seconds before retry attempt...")
                 await asyncio.sleep(retry_delay)
@@ -696,10 +705,10 @@ async def main():
                 break
         
         # Final results
-        if retry_429_rows and attempt > max_retry_attempts:
-            print(f"\nReached maximum retry attempts ({max_retry_attempts}). {len(retry_429_rows)} items with 429 errors will not be retried.")
-        elif not retry_429_rows:
-            print(f"\nAll downloads completed successfully or no 429 errors to retry.")
+        if retry_rows and attempt > max_retry_attempts:
+            print(f"\nReached maximum retry attempts ({max_retry_attempts}). {len(retry_rows)} items with retry errors will not be retried.")
+        elif not retry_rows:
+            print(f"\nAll downloads completed successfully or no retry errors remaining.")
     
     # Cancel recovery task if it was started
     if recovery_task:
